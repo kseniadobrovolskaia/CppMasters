@@ -4,7 +4,7 @@ project(greatstr)
 
 option(BUILD_TESTS "Build tests" ON)
 
-add_compile_options(-std=c++20)
+add_compile_options(-std=c++20 -Wall)
 
 set(SOURCE_EXE main/main.cpp
    )
