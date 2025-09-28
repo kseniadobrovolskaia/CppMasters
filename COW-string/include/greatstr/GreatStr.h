@@ -13,11 +13,11 @@ class GreatStr {
     size_t Capacity;
     mutable int RefCount = 0;
 
-    static const size_t CIN_LIMIT = 100;
+    static const size_t CIN_LIMIT = 1000;
 
     int refs() const { return RefCount; }
-    void incRefs() { ++RefCount; };
-    void decRefs() { --RefCount; };
+    void incRefs() const { ++RefCount; };
+    void decRefs() const { --RefCount; };
     void reserve(size_t NewCapacity) {
       if (NewCapacity <= Capacity)
         return;
@@ -41,7 +41,8 @@ class GreatStr {
       Data = new CharT[](Capacity);
       Traits::copy(Data, Rhs.Data, Size + 1);
     }
-    GreatStrBuf(GreatStrBuf &&Rhs) : Data(Rhs.Data), Size(Rhs.Size) {
+    GreatStrBuf(GreatStrBuf &&Rhs)
+        : Data(Rhs.Data), Size(Rhs.Size), Capacity(Rhs.Capacity) {
       Rhs.Size = 0;
       Rhs.Capacity = 0;
       Rhs.Data = nullptr;
@@ -53,13 +54,17 @@ class GreatStr {
       Traits::copy(Data, Rhs, Size);
       Data[Size] = Traits::to_char_type(0);
     }
-    ~GreatStrBuf() { delete[] Data; }
+    ~GreatStrBuf() {
+      assert(RefCount == -1);
+      delete[] Data;
+    }
 
     GreatStrBuf &operator=(const GreatStrBuf &Rhs) {
       if (this == &Rhs)
         return *this;
       Size = Rhs.Size;
       if (Rhs.Size + 1 > Capacity) {
+        assert(RefCount == -1);
         delete[] Data;
         Capacity = Rhs.Size + 1;
         Data = new CharT[](Capacity);
@@ -70,6 +75,7 @@ class GreatStr {
     GreatStrBuf &operator=(GreatStrBuf &&Rhs) {
       if (this == &Rhs)
         return *this;
+      assert(RefCount == -1);
       delete[] Data;
       Size = Rhs.Size;
       Capacity = Rhs.Capacity;
@@ -124,22 +130,12 @@ class GreatStr {
       Os << S.Data;
       return Os;
     }
-    friend GreatStrBuf operator+(const GreatStrBuf &Lhs,
-                                 const GreatStrBuf &Rhs) {
-      GreatStrBuf Tmp;
-      Tmp.Size = Lhs.Size + Rhs.Size;
-      Tmp.Capacity = Tmp.Size + 1;
-      Tmp.Data = new CharT[](Tmp.Capacity);
-      Traits::copy(Tmp.Data, Lhs.Data, Lhs.Size);
-      Traits::copy(Tmp.Data + Lhs.Size, Rhs.Data, Rhs.Size + 1);
-      return Tmp;
-    }
   };
 
 private:
   GreatStrBuf *Str;
 
-  GreatStr(GreatStrBuf &&Rhs) : Str(new GreatStrBuf(std::move(Rhs))){};
+  GreatStr(GreatStrBuf *Rhs) : Str(Rhs){};
 
 public:
   GreatStr() : Str(new GreatStrBuf){};
@@ -156,7 +152,7 @@ public:
   }
 
   GreatStr &operator=(const GreatStr &Rhs) {
-    if (this == &Rhs)
+    if (this == &Rhs || Rhs.Str == Str)
       return *this;
     Str->decRefs();
     if (Str->refs() == -1)
@@ -166,6 +162,8 @@ public:
     return *this;
   };
   GreatStr &operator=(GreatStr &&Rhs) {
+    if (this == &Rhs)
+      return *this;
     Str->decRefs();
     if (Str->refs() == -1)
       delete Str;
@@ -192,9 +190,11 @@ public:
 
   CharT &operator[](int Idx) {
     if (Str->refs() > 0) {
+      GreatStrBuf *Tmp = new GreatStrBuf(*Str);
       Str->decRefs();
-      auto Tmp = *Str;
-      Str = new GreatStrBuf(Tmp);
+      if (Str->refs() == -1)
+        delete Str;
+      Str = Tmp;
     }
     return Str->operator[](Idx);
   };
@@ -217,8 +217,15 @@ public:
     Is >> *(S.Str);
     return Is;
   }
-  friend GreatStr operator+(const GreatStr &Lhs1, const GreatStr &Rhs1) {
-    return *(Lhs1.Str) + *(Rhs1.Str);
+  friend GreatStr operator+(const GreatStr &Lhs, const GreatStr &Rhs) {
+    GreatStrBuf *Tmp = new GreatStrBuf;
+    Tmp->Size = Lhs.size() + Rhs.size();
+    Tmp->Capacity = Tmp->Size + 1;
+    Tmp->reserve(Tmp->Capacity);
+    Traits::copy(Tmp->Data, Lhs.c_str(), Lhs.size());
+    Traits::copy(Tmp->Data + Lhs.size(), Rhs.c_str(), Rhs.size());
+    Tmp->Data[Tmp->Size] = Traits::to_char_type(0);
+    return GreatStr(Tmp);
   }
 };
 
